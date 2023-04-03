@@ -40,6 +40,17 @@
             opacity: var(--opacity-disabled);
             cursor: not-allowed;
         }
+
+        // Hide arrows in WebKit-based browsers
+        &::-webkit-outer-spin-button,
+        &::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        // Hide arrows in Firefox
+        &[type='number'] {
+            -moz-appearance: textfield;
+        }
     }
 
     .LemonIcon {
