@@ -2,7 +2,7 @@ import './PlayerMeta.scss'
 import { dayjs } from 'lib/dayjs'
 import { ProfilePicture } from 'lib/lemon-ui/ProfilePicture'
 import { useValues } from 'kea'
-import { asDisplay, PersonHeader } from 'scenes/persons/PersonHeader'
+import { PersonDisplay } from 'scenes/persons/PersonDisplay'
 import { playerMetaLogic } from 'scenes/session-recordings/player/playerMetaLogic'
 import { TZLabel } from 'lib/components/TZLabel'
 import { percentage } from 'lib/utils'
@@ -17,7 +17,8 @@ import { useResizeBreakpoints } from 'lib/hooks/useResizeObserver'
 import { PlayerMetaLinks } from './PlayerMetaLinks'
 import { sessionRecordingPlayerLogic, SessionRecordingPlayerMode } from './sessionRecordingPlayerLogic'
 import { getCurrentExporterData } from '~/exporter/exporterViewLogic'
-import { FriendlyLogo } from '~/toolbar/assets/FriendlyLogo'
+import { Logo } from '~/toolbar/assets/Logo'
+import { asDisplay } from 'scenes/persons/person-utils'
 
 function SessionPropertyMeta(props: {
     fullScreen: boolean
@@ -77,6 +78,7 @@ export function PlayerMeta(): JSX.Element {
         sessionPerson,
         resolution,
         lastPageviewEvent,
+        lastUrl,
         scale,
         currentWindowIndex,
         startTime,
@@ -130,7 +132,7 @@ export function PlayerMeta(): JSX.Element {
                     {!whitelabel ? (
                         <Tooltip title="Powered by PostHog" placement="right">
                             <Link to={'https://posthog.com'} className="flex items-center" target="blank">
-                                <FriendlyLogo />
+                                <Logo />
                             </Link>
                         </Tooltip>
                     ) : null}
@@ -167,7 +169,7 @@ export function PlayerMeta(): JSX.Element {
                         ) : (
                             <div className="flex gap-1">
                                 <span className="whitespace-nowrap truncate">
-                                    <PersonHeader person={sessionPerson} withIcon={false} noEllipsis={true} />
+                                    <PersonDisplay person={sessionPerson} withIcon={false} noEllipsis={true} />
                                 </span>
                                 {'·'}
                                 <TZLabel
@@ -202,7 +204,7 @@ export function PlayerMeta(): JSX.Element {
             >
                 {sessionPlayerMetaDataLoading ? (
                     <LemonSkeleton className="w-1/3 my-1" />
-                ) : currentWindowIndex >= 0 ? (
+                ) : (
                     <>
                         <Tooltip
                             title={
@@ -216,23 +218,19 @@ export function PlayerMeta(): JSX.Element {
                             <IconWindow value={currentWindowIndex + 1} className="text-muted-alt" />
                         </Tooltip>
 
-                        {lastPageviewEvent?.properties?.['$current_url'] && (
+                        {lastUrl && (
                             <span className="flex items-center gap-2 truncate">
                                 <span>·</span>
                                 <span className="flex items-center gap-1 truncate">
                                     <Tooltip title="Click to open url">
-                                        <Link
-                                            to={lastPageviewEvent?.properties['$current_url']}
-                                            target="_blank"
-                                            className="truncate"
-                                        >
-                                            {lastPageviewEvent?.properties['$current_url']}
+                                        <Link to={lastUrl} target="_blank" className="truncate">
+                                            {lastUrl}
                                         </Link>
                                     </Tooltip>
                                     <span className="flex items-center">
                                         <CopyToClipboardInline
                                             description="current url"
-                                            explicitValue={lastPageviewEvent?.properties['$current_url']}
+                                            explicitValue={lastUrl}
                                             iconStyle={{ color: 'var(--muted-alt)' }}
                                         />
                                     </span>
@@ -248,7 +246,7 @@ export function PlayerMeta(): JSX.Element {
                             </span>
                         )}
                     </>
-                ) : null}
+                )}
                 <div className={clsx('flex-1', isSmallPlayer ? 'min-w-4' : 'min-w-20')} />
                 {resolutionView}
             </div>

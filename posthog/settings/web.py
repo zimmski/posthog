@@ -30,6 +30,18 @@ DECIDE_BUCKET_REPLENISH_RATE = get_from_env("DECIDE_BUCKET_REPLENISH_RATE", type
 DECIDE_BILLING_SAMPLING_RATE = get_from_env("DECIDE_BILLING_SAMPLING_RATE", 0.1, type_cast=float)
 DECIDE_BILLING_ANALYTICS_TOKEN = get_from_env("DECIDE_BILLING_ANALYTICS_TOKEN", None, type_cast=str, optional=True)
 
+# Decide regular request analytics
+# Takes 3 possible formats, all separated by commas:
+# A number: "2"
+# A range: "2:5" -- represents team IDs 2, 3, 4, 5
+# The string "all" -- represents all team IDs
+DECIDE_TRACK_TEAM_IDS = get_list(os.getenv("DECIDE_TRACK_TEAM_IDS", ""))
+
+# Decide skip hash key overrides
+DECIDE_SKIP_HASH_KEY_OVERRIDE_WRITES = get_from_env(
+    "DECIDE_SKIP_HASH_KEY_OVERRIDE_WRITES", False, type_cast=str_to_bool
+)
+
 # Application definition
 
 INSTALLED_APPS = [

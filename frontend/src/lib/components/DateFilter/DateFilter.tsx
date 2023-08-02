@@ -29,6 +29,7 @@ export interface DateFilterProps {
 interface RawDateFilterProps extends DateFilterProps {
     dateFrom?: string | null | dayjs.Dayjs
     dateTo?: string | null | dayjs.Dayjs
+    max?: number | null
 }
 
 export function DateFilter({
@@ -45,6 +46,7 @@ export function DateFilter({
     isDateFormatted = true,
     size,
     dropdownPlacement = 'bottom-start',
+    max,
 }: RawDateFilterProps): JSX.Element {
     const key = useRef(uuid()).current
     const logicProps: DateFilterLogicProps = {
@@ -101,7 +103,7 @@ export function DateFilter({
                     const dateValue = dateFilterToText(
                         values[0],
                         values[1],
-                        'No date selected',
+                        'Date range specified in respective insights',
                         dateOptions,
                         isDateFormatted
                     )
@@ -131,6 +133,7 @@ export function DateFilter({
                         popover={{
                             ref: rollingDateRangeRef,
                         }}
+                        max={max}
                     />
                 )}
                 <LemonDivider />
