@@ -109,10 +109,10 @@ export function InsightContainer({
         }
 
         // Insight agnostic empty states
-        if (!!erroredQueryId) {
+        if (erroredQueryId) {
             return <InsightErrorState queryId={erroredQueryId} />
         }
-        if (!!timedOutQueryId) {
+        if (timedOutQueryId) {
             return (
                 <InsightTimeoutState
                     isLoading={insightDataLoading}
@@ -239,7 +239,7 @@ export function InsightContainer({
                         </div>
                     )}
 
-                    {!!BlockingEmptyState ? (
+                    {BlockingEmptyState ? (
                         BlockingEmptyState
                     ) : supportsDisplay && (insightFilter as TrendsFilter | StickinessFilter)?.show_legend ? (
                         <Row className="insights-graph-container-row" wrap={false}>

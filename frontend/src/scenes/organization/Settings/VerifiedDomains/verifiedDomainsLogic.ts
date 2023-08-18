@@ -1,7 +1,6 @@
 import { actions, afterMount, connect, kea, listeners, path, reducers, selectors } from 'kea'
 import api from 'lib/api'
 import { lemonToast } from 'lib/lemon-ui/lemonToast'
-import { SECURE_URL_REGEX } from 'lib/constants'
 import { organizationLogic } from 'scenes/organizationLogic'
 import { OrganizationDomainType, AvailableFeature } from '~/types'
 import type { verifiedDomainsLogicType } from './verifiedDomainsLogicType'
@@ -17,6 +16,15 @@ export type SAMLConfigType = Partial<
     Pick<OrganizationDomainType, 'saml_acs_url' | 'saml_entity_id' | 'saml_x509_cert'> &
         Pick<OrganizationDomainType, 'id'>
 >
+
+export const isSecureURL = (url: string): boolean => {
+    try {
+        const parsed = new URL(url)
+        return parsed.protocol === 'https:'
+    } catch (_) {
+        return false
+    }
+}
 
 export const verifiedDomainsLogic = kea<verifiedDomainsLogicType>([
     path(['scenes', 'organization', 'verifiedDomainsLogic']),
@@ -139,7 +147,7 @@ export const verifiedDomainsLogic = kea<verifiedDomainsLogicType>([
             defaults: {} as SAMLConfigType,
             errors: (payload) => ({
                 saml_acs_url:
-                    payload.saml_acs_url && !payload.saml_acs_url.match(SECURE_URL_REGEX)
+                    payload.saml_acs_url && !isSecureURL(payload.saml_acs_url)
                         ? 'Please enter a valid URL, including https://'
                         : undefined,
             }),

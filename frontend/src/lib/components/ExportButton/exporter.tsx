@@ -48,57 +48,59 @@ export async function triggerExport(asset: TriggerExportProps): Promise<void> {
             lemonToast.error('Export failed!')
         }
     } else {
-        const poller = new Promise(async (resolve, reject) => {
-            const trackingProperties = {
-                export_format: asset.export_format,
-                dashboard: asset.dashboard,
-                insight: asset.insight,
-                export_context: asset.export_context,
-                total_time_ms: 0,
-            }
-            const startTime = performance.now()
-
-            try {
-                let exportedAsset = await api.exports.create({
+        const poller = new Promise<string>((resolve, reject) => {
+            Promise.resolve(async () => {
+                const trackingProperties = {
                     export_format: asset.export_format,
                     dashboard: asset.dashboard,
                     insight: asset.insight,
                     export_context: asset.export_context,
-                    expires_after: dayjs().add(10, 'minute'),
-                })
-
-                if (!exportedAsset.id) {
-                    reject('Missing export_id from response')
-                    return
+                    total_time_ms: 0,
                 }
+                const startTime = performance.now()
 
-                let attempts = 0
+                try {
+                    let exportedAsset = await api.exports.create({
+                        export_format: asset.export_format,
+                        dashboard: asset.dashboard,
+                        insight: asset.insight,
+                        export_context: asset.export_context,
+                        expires_after: dayjs().add(10, 'minute'),
+                    })
 
-                const maxPoll = asset.export_format === ExporterFormat.CSV ? MAX_CSV_POLL : MAX_PNG_POLL
-                while (attempts < maxPoll) {
-                    attempts++
-
-                    if (exportedAsset.has_content) {
-                        await downloadExportedAsset(exportedAsset)
-
-                        trackingProperties.total_time_ms = performance.now() - startTime
-                        posthog.capture('export succeeded', trackingProperties)
-
-                        resolve('Export complete')
+                    if (!exportedAsset.id) {
+                        reject('Missing export_id from response')
                         return
                     }
 
-                    await delay(POLL_DELAY_MS)
+                    let attempts = 0
 
-                    exportedAsset = await api.exports.get(exportedAsset.id)
+                    const maxPoll = asset.export_format === ExporterFormat.CSV ? MAX_CSV_POLL : MAX_PNG_POLL
+                    while (attempts < maxPoll) {
+                        attempts++
+
+                        if (exportedAsset.has_content) {
+                            await downloadExportedAsset(exportedAsset)
+
+                            trackingProperties.total_time_ms = performance.now() - startTime
+                            posthog.capture('export succeeded', trackingProperties)
+
+                            resolve('Export complete')
+                            return
+                        }
+
+                        await delay(POLL_DELAY_MS)
+
+                        exportedAsset = await api.exports.get(exportedAsset.id)
+                    }
+
+                    reject('Content not loaded in time...')
+                } catch (e: any) {
+                    trackingProperties.total_time_ms = performance.now() - startTime
+                    posthog.capture('export failed', trackingProperties)
+                    reject(`Export failed: ${JSON.stringify(e)}`)
                 }
-
-                reject('Content not loaded in time...')
-            } catch (e: any) {
-                trackingProperties.total_time_ms = performance.now() - startTime
-                posthog.capture('export failed', trackingProperties)
-                reject(`Export failed: ${JSON.stringify(e)}`)
-            }
+            })
         })
         await lemonToast.promise(
             poller,

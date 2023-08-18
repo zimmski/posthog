@@ -138,7 +138,7 @@ export const notebooksListLogic = kea<notebooksListLogicType>([
             [] as NotebookListItemType[],
             {
                 // if we already have filtered notebooks, don't replace them
-                loadNotebooksSuccess: (state, { notebooks }) => (!!state.length ? state : notebooks),
+                loadNotebooksSuccess: (state, { notebooks }) => (state.length ? state : notebooks),
             },
         ],
     }),
