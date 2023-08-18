@@ -163,6 +163,7 @@ export const FEATURE_FLAGS = {
     SESSION_REPLAY_SIMPLE_FILTERS: 'simple-session-replay-filters', // owner: #team-monitoring
     SURVEYS_MULTIPLE_CHOICE: 'surveys-multiple-choice', // owner: @liyiy
     CS_DASHBOARDS: 'cs-dashboards', // owner: @pauldambra
+    APPS_AND_EXPORTS_UI: 'apps-and-exports-ui', // owner: @benjackwhite
 } as const
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[keyof typeof FEATURE_FLAGS]
 
