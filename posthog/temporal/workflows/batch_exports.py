@@ -1,6 +1,8 @@
+import abc
+import csv
 import datetime as dt
 import json
-import re
+import tempfile
 import typing
 from string import Template
 
@@ -186,58 +188,117 @@ def get_data_interval(interval: str, data_interval_end: str | None) -> tuple[dt.
     return (data_interval_start_dt, data_interval_end_dt)
 
 
-def elements_chain_to_elements(elements_chain: str) -> list[dict]:
-    """Parses the elements_chain string into a list of dict.
+def json_dumps_bytes(d, encoding="utf-8") -> bytes:
+    return json.dumps(d).encode(encoding)
 
-    The output format is built by observing how it is read by
-    https://github.com/PostHog/posthog/blob/master/plugin-server/src/utils/db/elements-chain.ts
-    This is not the same as the chain_to_elements function in posthog.models.elements.
+
+class BatchExportTemporaryFile:
+    """A TemporaryFile used to as an intermediate step while exporting data.
+
+    This class does not implement the file-like interface but rather passes any calls
+    to the underlying tempfile.NamedTemporaryFile. We do override 'write' methods
+    to allow tracking bytes and records.
+
+    Implementations of BatchExports should implement their own subclass of
+    BatchExportTemporaryFile to allow exporting data on file reset. For this reason,
+    the 'on_reset' and 'on_exit' abstract methods can be overriden. BatchExports
+    should not concern themselves with the intricacies of temporary file management,
+    but only with implementing the actual exporting of data.
     """
-    elements = []
 
-    split_chain_regex = re.compile(r'(?:[^\s;"]|"(?:\\.|[^"])*")+')
-    split_class_attributes_regex = re.compile(r"(.*?)($|:([a-zA-Z\-_0-9]*=.*))", flags=re.MULTILINE)
-    parse_attributes_regex = re.compile(r'((.*?)="(.*?[^\\])")')
+    def __init__(
+        self,
+        max_size: int = 0,
+        mode: str = "w+",
+        buffering=-1,
+        encoding: str | None = None,
+        newline: str | None = None,
+        suffix: str | None = None,
+        prefix: str | None = None,
+        dir: str | None = None,
+        *,
+        errors: str | None = None,
+    ):
+        self._file = tempfile.NamedTemporaryFile(
+            mode=mode,
+            encoding=encoding,
+            newline=newline,
+            buffering=buffering,
+            suffix=suffix,
+            prefix=prefix,
+            dir=dir,
+            errors=errors,
+        )
+        self.bytes_total = 0
+        self.records_total = 0
+        self.bytes_since_last_reset = 0
+        self.records_since_last_reset = 0
+        self.max_size = max_size
 
-    elements_chain = elements_chain.replace("\n", "")
+    def __getattr__(self, name):
+        return self._file.__getattr__(name)
 
-    for match in re.finditer(split_chain_regex, elements_chain):
-        class_attributes = re.search(split_class_attributes_regex, match.group(0))
+    def __enter__(self):
+        self._file.__enter__()
+        return self
 
-        attributes = {}
-        if class_attributes is not None and class_attributes.group(3):
-            try:
-                attributes = {m[2]: m[3] for m in re.finditer(parse_attributes_regex, class_attributes.group(3))}
-            except IndexError:
-                pass
+    def __exit__(self, exc, value, tb):
+        self._file.seek(0)
+        self.on_exit()
+        return self._file.__exit__(exc, value, tb)
 
-        element = {}
+    @abc.abstractmethod
+    def on_exit(self):
+        self.on_reset()
 
-        if class_attributes is not None and class_attributes.group(1):
-            try:
-                tag_and_class = class_attributes.group(1).split(".")
-            except IndexError:
-                pass
-            else:
-                element["tag_name"] = tag_and_class.pop(0)
-                if len(tag_and_class) > 0:
-                    element["attr__class"] = tag_and_class
+    def write(self, b):
+        result = self._file.write(b)
+        self.bytes_total += len(b)
+        self.bytes_since_last_reset += len(b)
 
-        for key, value in attributes.items():
-            match key:
-                case "href":
-                    element["attr__href"] = value
-                case "nth-child":
-                    element["nth_child"] = int(value)
-                case "nth-of-type":
-                    element["nth_of_type"] = int(value)
-                case "text":
-                    element["$el_text"] = value
-                case "attr_id":
-                    element["attr__id"] = value
-                case k:
-                    element[k] = value
+        if self._file.tell() > self.max_size:
+            assert self._file.tell() == self.bytes_since_last_reset
+            self.reset()
 
-        elements.append(element)
+        return result
 
-    return elements
+    def write_records_to_jsonl(self, records):
+        jsonl_dump = b"\n".join(map(json_dumps_bytes, records))
+
+        if len(records) == 1:
+            jsonl_dump += b"\n"
+
+        result = self.write(jsonl_dump)
+
+        self.records_total += len(records)
+        self.records_since_last_reset += len(records)
+
+        return result
+
+    def write_records_to_csv(
+        self, records, delimiter: str = ",", quotechar: str = '"', escapechar: str = "\\", quoting=csv.QUOTE_NONE
+    ):
+        writer = csv.writer(self, delimiter=delimiter, quotechar=quotechar, escapechar=escapechar, quoting=quoting)
+        result = writer.writerows(records)
+
+        self.records_total += len(records)
+        self.records_since_last_reset += len(records)
+
+        return result
+
+    def write_records_to_tsv(self, records, quotechar: str = '"', escapechar: str = "\\", quoting=csv.QUOTE_NONE):
+        return self.write_records_to_csv(
+            records, delimiter="\t", quotechar=quotechar, escapechar=escapechar, quoting=quoting
+        )
+
+    def reset(self):
+        self._file.seek(0)
+        self.on_reset()
+
+        self._file.truncate()
+        self.bytes_since_last_reset = 0
+        self.records_since_last_reset = 0
+
+    @abc.abstractmethod
+    def on_reset(self):
+        pass

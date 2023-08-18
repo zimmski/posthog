@@ -1,8 +1,6 @@
 import contextlib
-import csv
 import datetime as dt
 import json
-import tempfile
 from dataclasses import dataclass
 
 import psycopg2
@@ -20,6 +18,7 @@ from posthog.temporal.workflows.base import (
     update_export_run_status,
 )
 from posthog.temporal.workflows.batch_exports import (
+    BatchExportTemporaryFile,
     get_data_interval,
     get_results_iterator,
     get_rows_count,
@@ -29,6 +28,7 @@ from posthog.temporal.workflows.clickhouse import get_client
 
 @contextlib.contextmanager
 def postgres_connection(inputs):
+    """Manage a Postgres connection."""
     connection = psycopg2.connect(
         user=inputs.user,
         password=inputs.password,
@@ -46,6 +46,31 @@ def postgres_connection(inputs):
         connection.commit()
     finally:
         connection.close()
+
+
+class PostgresBatchExportTemporaryFile(BatchExportTemporaryFile):
+    """A concrete BatchExportTemporaryFile to COPY FROM on Postgres on reset."""
+
+    def __init__(self, *args, postgres_connection, schema, table_name, schema_columns, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.postgres_connection = postgres_connection
+        self.schema = schema
+        self.table_name = table_name
+        self.schema_columns = schema_columns
+
+    def on_reset(self):
+        activity.logger.info("Copying %s bytes to Postgres", self.bytes_since_last_reset)
+
+        with self.postgres_connection.cursor() as cursor:
+            cursor.copy_from(
+                self,
+                sql.Identifier(self.schema, self.table_name).as_string(self.postgres_connection),
+                null="",
+                columns=self.schema_columns,
+            )
+
+    def on_exit(self):
+        super().on_exit()
 
 
 @dataclass
@@ -96,9 +121,6 @@ async def insert_into_postgres_activity(inputs: PostgresInsertInputs):
             interval_start=inputs.data_interval_start,
             interval_end=inputs.data_interval_end,
         )
-        local_results_file = tempfile.NamedTemporaryFile(mode="w+", suffix=".csv")
-        writer = csv.writer(local_results_file, delimiter="\t", quotechar='"', escapechar="\\", quoting=csv.QUOTE_NONE)
-
         with postgres_connection(inputs) as connection:
             with connection.cursor() as cursor:
                 result = cursor.execute(
@@ -136,48 +158,19 @@ async def insert_into_postgres_activity(inputs: PostgresInsertInputs):
         )
 
         with postgres_connection(inputs) as connection:
-            for result in results_iterator:
-                row = (
-                    json.dumps(result[column]) if isinstance(result[column], (dict, list)) else result[column]
-                    for column in schema_columns
-                )
-                writer.writerow(row)
-
-                if (
-                    local_results_file.tell()
-                    and local_results_file.tell() > settings.BATCH_EXPORT_POSTGRES_UPLOAD_CHUNK_SIZE_BYTES
-                ):
-                    activity.logger.info("Copying to Postgres")
-
-                    local_results_file.flush()
-                    local_results_file.seek(0)
-
-                    with connection.cursor() as cursor:
-                        cursor.copy_from(
-                            local_results_file,
-                            sql.Identifier(inputs.schema, inputs.table_name).as_string(connection),
-                            null="",
-                            columns=schema_columns,
-                        )
-
-                    local_results_file.close()
-                    local_results_file = tempfile.NamedTemporaryFile(mode="w+", suffix=".csv")
-                    writer = csv.writer(
-                        local_results_file, delimiter="\t", quotechar='"', escapechar="\\", quoting=csv.QUOTE_NONE
+            with PostgresBatchExportTemporaryFile(
+                max_size=settings.BATCH_EXPORT_POSTGRES_UPLOAD_CHUNK_SIZE_BYTES,
+                postgres_connection=connection,
+                schema=inputs.schema,
+                table_name=inputs.table_name,
+                schema_columns=schema_columns,
+            ) as pg_file:
+                for result in results_iterator:
+                    row = (
+                        json.dumps(result[column]) if isinstance(result[column], (dict, list)) else result[column]
+                        for column in schema_columns
                     )
-
-            local_results_file.flush()
-            local_results_file.seek(0)
-
-            with connection.cursor() as cursor:
-                cursor.copy_from(
-                    local_results_file,
-                    sql.Identifier(inputs.schema, inputs.table_name).as_string(connection),
-                    null="",
-                    columns=schema_columns,
-                )
-
-            local_results_file.close()
+                    pg_file.write_records_to_tsv([row])
 
 
 @workflow.defn(name="postgres-export")
