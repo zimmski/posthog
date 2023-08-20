@@ -450,6 +450,24 @@ def test_slack_webhook(request):
         return JsonResponse({"error": "no webhook URL"})
     message = {"text": "_Greetings_ from PostHog!"}
     try:
+        parsed_webhook: urllib.parse.ParseResult = urllib.parse.urlparse(webhook)
+        if not parsed_webhook.hostname:
+            raise ValueError("No hostname")
+        hostname_parts = parsed_webhook.hostname.split(".")
+        if len(hostname_parts) < 2 or hostname_parts[-1] in [
+            "invalid",
+            "local",
+            "test",
+            "localhost",
+            "intranet",
+            "private",
+            "home",
+            "corp",
+            "lan",
+            "arpa",
+        ]:
+            raise ValueError("Disallowed hostname")
+
         response = requests.post(webhook, verify=False, json=message)
 
         if response.ok:
